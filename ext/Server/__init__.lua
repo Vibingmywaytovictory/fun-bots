@@ -69,6 +69,8 @@ local m_RCONCommands = require('Commands/RCON')
 local m_AirTargets = require('AirTargets')
 ---@type GameDirector
 local m_GameDirector = require('GameDirector')
+---@type Navmesh
+local m_Navmesh = require('Navmesh')
 ---@type PermissionManager
 PermissionManager = require('PermissionManager')
 
@@ -161,6 +163,7 @@ function FunBotServer:RegisterCustomEvents()
 	NetEvents:Subscribe('ConsoleCommands:DestroyObstaclesTest', self, self.OnDestroyObstaclesTest)
 	NetEvents:Subscribe("SpawnPointHelper:TeleportTo", self, self.OnTeleportTo)
 	m_NodeEditor:RegisterCustomEvents()
+	m_Navmesh:RegisterCustomEvents()
 end
 
 -- Register instance callbacks.
@@ -344,6 +347,7 @@ function FunBotServer:OnLevelLoaded(p_LevelName, p_GameMode, p_Round, p_RoundsPe
 	m_AirTargets:OnLevelLoaded()
 	m_BotSpawner:OnLevelLoaded(Globals.Round)
 	m_NodeEditor:OnLevelLoaded(p_LevelName, p_GameMode, s_CustomGameMode)
+	m_Navmesh:OnLevelLoaded(p_LevelName, p_GameMode)
 end
 
 function FunBotServer:OnFinishedLoading()
@@ -378,6 +382,7 @@ function FunBotServer:OnLevelDestroy()
 	m_NodeEditor:OnLevelDestroy()
 	m_AirTargets:OnLevelDestroy()
 	m_GameDirector:OnLevelDestroy()
+	m_Navmesh:OnLevelDestroy()
 	local s_OldMemory = math.floor(collectgarbage("count") / 1024)
 	collectgarbage('collect')
 	m_Logger:Write("*Collecting Garbage on Level Destroy: " ..

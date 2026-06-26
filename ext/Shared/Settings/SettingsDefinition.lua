@@ -1262,6 +1262,89 @@ SettingsDefinition = {
 			UpdateFlag = UpdateFlag.None,
 			Category = "TRACE"
 		},
+		-- Navmesh baker.
+		{
+			Name = "DebugBakeNavmesh",
+			Text = "Navmesh Baker",
+			---@type Type|integer
+			Type = Type.Boolean,
+			Value = Config.DebugBakeNavmesh,
+			Description = "Bake an infantry navmesh by probing the level with raycasts. Enable to start baking from the existing waypoints and show the overlay; it saves automatically when finished. Disable to stop",
+			Default = false,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "DrawNavmesh",
+			Text = "Draw Navmesh",
+			---@type Type|integer
+			Type = Type.Boolean,
+			Value = Config.DrawNavmesh,
+			Description = "Draw the baked navmesh cells near the player while the baker is armed",
+			Default = true,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshCellSize",
+			Text = "Navmesh Cell Size",
+			---@type Type|integer
+			Type = Type.Float,
+			Value = Config.NavmeshCellSize,
+			Description = "Horizontal size of a navmesh cell in meters. Smaller = more detail but slower bake",
+			Reference = Range(0.25, 4.00, 0.25),
+			Default = 1.0,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshMaxSlope",
+			Text = "Navmesh Max Slope",
+			---@type Type|integer
+			Type = Type.Integer,
+			Value = Config.NavmeshMaxSlope,
+			Description = "Maximum walkable slope in degrees a navmesh cell may have",
+			Reference = Range(5.00, 80.00, 1.0),
+			Default = 45,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshCellsPerTick",
+			Text = "Navmesh Bake Speed",
+			---@type Type|integer
+			Type = Type.Integer,
+			Value = Config.NavmeshCellsPerTick,
+			Description = "Cells probed per bake step. Higher bakes faster but costs more performance. Takes effect immediately, even mid-bake",
+			Reference = Range(4.00, 256.00, 4.0),
+			Default = 16,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshStepInterval",
+			Text = "Navmesh Bake Interval",
+			---@type Type|integer
+			Type = Type.Float,
+			Value = Config.NavmeshStepInterval,
+			Description = "Seconds between bake steps. Lower bakes faster but costs more performance. Takes effect immediately, even mid-bake",
+			Reference = Range(0.00, 0.50, 0.01),
+			Default = 0.05,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshBoundRadius",
+			Text = "Navmesh Bound Radius",
+			---@type Type|integer
+			Type = Type.Integer,
+			Value = Config.NavmeshBoundRadius,
+			Description = "Max distance in meters a navmesh cell may be from a waypoint. Keeps the bake inside the play area so it cannot run away across the map. Set to 0 for no bound. Applied when a bake starts",
+			Reference = Range(0.00, 200.00, 5.0),
+			Default = 40,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
 		{
 			Name = "DrawWaypointLines",
 			Text = "Draw Waypoint Lines",

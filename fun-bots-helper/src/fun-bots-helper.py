@@ -15,6 +15,8 @@ from tools.create_maplist import create_map_list
 from tools.create_settings import create_settings
 from tools.export_permission_and_config import export_permission_and_config
 from tools.export_traces import export_traces
+from tools.export_navmesh import export_navmesh
+from tools.import_navmesh import import_navmesh
 from tools.fix_link_and_vehicles import fix_link_and_vehicles
 from tools.fix_nodes import fix_nodes
 from tools.fix_objectives import fix_objectives
@@ -35,11 +37,11 @@ class App(customtkinter.CTk):
 
         signal.signal(signal.SIGINT, self.signal_handler)
 
-        self.geometry("900x500")
+        self.geometry("900x600")
         self.title("Fun Bots Helper")
-        self.minsize(700, 300)
+        self.minsize(700, 360)
 
-        self.grid_rowconfigure(tuple(range(8)), weight=1)
+        self.grid_rowconfigure(tuple(range(11)), weight=1)
         self.grid_columnconfigure(tuple(range(4)), weight=1)
 
         self.label_user_tools = customtkinter.CTkLabel(
@@ -90,7 +92,26 @@ class App(customtkinter.CTk):
             command=lambda: self.create_thread(self.export_permission_and_config_fb),
             **button_properties,
         )
-        self.button_export_settings.grid(row=7, column=0, pady=(0, 20))
+        self.button_export_settings.grid(row=7, column=0)
+
+        self.label_navmesh = customtkinter.CTkLabel(
+            master=self, text="Navmesh", font=("Terminal", 12)
+        )
+        self.label_navmesh.grid(row=8, column=0, sticky="ew")
+
+        self.button_import_navmesh = customtkinter.CTkButton(
+            text="Import",
+            command=lambda: self.create_thread(self.import_navmesh_fb),
+            **button_properties,
+        )
+        self.button_import_navmesh.grid(row=9, column=0)
+
+        self.button_export_navmesh = customtkinter.CTkButton(
+            text="Export",
+            command=lambda: self.create_thread(self.export_navmesh_fb),
+            **button_properties,
+        )
+        self.button_export_navmesh.grid(row=10, column=0, pady=(0, 20))
 
         self.label_dev_tools = customtkinter.CTkLabel(
             master=self, text="Dev Tools", font=("Terminal", 17)
@@ -242,6 +263,14 @@ class App(customtkinter.CTk):
     def import_traces_fb(self) -> None:
         import_traces()
         logger.info("Maps Imported\n")
+
+    def export_navmesh_fb(self) -> None:
+        export_navmesh()
+        logger.info("Navmesh Exported\n")
+
+    def import_navmesh_fb(self) -> None:
+        import_navmesh()
+        logger.info("Navmesh Imported\n")
 
     def export_permission_and_config_fb(self) -> None:
         export_permission_and_config()

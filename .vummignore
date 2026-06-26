@@ -1,5 +1,6 @@
 .vu/
 mapfiles/*.map
+navmeshfiles/*.navmesh
 permission_and_config/*.cfg
 fun-bots-helper/build/
 *vua.code-workspace

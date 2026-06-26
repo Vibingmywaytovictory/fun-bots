@@ -8,36 +8,36 @@ Config = {
 	BotWeapon = BotWeapons.Auto,		-- Select the weapon the bots use 
 	BotKit = BotKits.RANDOM_KIT,		-- The Kit of the Bots 
 	BotColor = BotColors.RANDOM_COLOR,	-- The Color of the Bots 
-	BotTeamNames = false,				-- If the bots shall have their names based on their team 
+	BotTeamNames = true,				-- If the bots shall have their names based on their team 
 
 	-- DIFFICULTY 
-	BotAimWorsening = 0.2,				-- Make bots aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
-	BotSniperAimWorsening = 0.1,		-- See botAimWorsening, only for Sniper-rifles 
-	BotSupportAimWorsening = 0.3,		-- See botAimWorsening, only for LMGs 
-	BotWorseningSkill = 0.40,			-- Variation of the skill of a single bot. The higher, the worse the bots can get compared to the original settings 
-	BotSniperWorseningSkill = 0.30,		-- See BotWorseningSkill - only for BOTs using sniper bolt-action rifles 
-	ReactionTime = 0.2,					-- Additional delay for bots, dependant of skill (might also be 0) 
-	DamageFactorAssault = 0.8,			-- Original Damage from bots gets multiplied by this 
-	DamageFactorCarabine = 0.8,			-- Original Damage from bots gets multiplied by this 
-	DamageFactorLMG = 0.8,				-- Original Damage from bots gets multiplied by this 
-	DamageFactorPDW = 0.8,				-- Original Damage from bots gets multiplied by this 
-	DamageFactorSniper = 0.8,			-- Original Damage from bots gets multiplied by this 
-	DamageFactorShotgun = 0.8,			-- Original Damage from bots gets multiplied by this 
-	DamageFactorPistol = 0.8,			-- Original Damage from bots gets multiplied by this 
+	BotAimWorsening = 0.9,				-- Make bots aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
+	BotSniperAimWorsening = 0.3,		-- See botAimWorsening, only for Sniper-rifles 
+	BotSupportAimWorsening = 1.1,		-- See botAimWorsening, only for LMGs 
+	BotWorseningSkill = 0.6,			-- Variation of the skill of a single bot. The higher, the worse the bots can get compared to the original settings 
+	BotSniperWorseningSkill = 0.5,		-- See BotWorseningSkill - only for BOTs using sniper bolt-action rifles 
+	ReactionTime = 0.9,					-- Additional delay for bots, dependant of skill (might also be 0) 
+	DamageFactorAssault = 0.6,			-- Original Damage from bots gets multiplied by this 
+	DamageFactorCarabine = 0.6,			-- Original Damage from bots gets multiplied by this 
+	DamageFactorLMG = 0.6,				-- Original Damage from bots gets multiplied by this 
+	DamageFactorPDW = 0.6,				-- Original Damage from bots gets multiplied by this 
+	DamageFactorSniper = 0.6,			-- Original Damage from bots gets multiplied by this 
+	DamageFactorShotgun = 0.6,			-- Original Damage from bots gets multiplied by this 
+	DamageFactorPistol = 0.6,			-- Original Damage from bots gets multiplied by this 
 	DamageFactorKnife = 1.5,			-- Original Damage from bots gets multiplied by this 
-	VehicleAimWorsening = 0.05,			-- Make bots in vehicles aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
-	VehicleAAAimWorsening = 0.9,		-- Make bots in AA aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
-	VehicleGunshipAimWorsening = 0.8,	-- Make bots in Gunships aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
-	VehicleChopperAimWorsening = 0.5,	-- Make bots in Choppers aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
-	VehiclePlaneAimWorsening = 0.02,	-- See VehicleAimWorsening, only for Planes 
-	DamageFactorVehicles = 1.0,			-- Original Damage from bots in vehicles gets multiplied by this 
+	VehicleAimWorsening = 1.0,			-- Make bots in vehicles aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
+	VehicleAAAimWorsening = 1.2,		-- Make bots in AA aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
+	VehicleGunshipAimWorsening = 1.0,	-- Make bots in Gunships aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
+	VehicleChopperAimWorsening = 0.7,	-- Make bots in Choppers aim worse: for difficulty: 0 = no offset (hard), 1 or even greater = more sway (easy) 
+	VehiclePlaneAimWorsening = 0.3,	-- See VehicleAimWorsening, only for Planes 
+	DamageFactorVehicles = 0.6,			-- Original Damage from bots in vehicles gets multiplied by this 
 
 	-- SPAWN 
 	SpawnMode = SpawnModes.balanced_teams,	-- Mode the bots spawn with 
 	BalancePlayersIgnoringBots = false,	-- Counts players in each team to decide which team a player joins 
 	TeamSwitchMode = TeamSwitchModes.SwitchForRoundTwo,	-- Mode to switch the team 
 	SpawnInBothTeams = true,			-- Bots spawn in both teams 
-	InitNumberOfBots = 10,				-- Bots for spawnmode 
+	InitNumberOfBots = 0,				-- Bots for spawnmode 
 	NewBotsPerNewPlayer = 1.6,			-- Number to increase Bots by when new players join 
 	FactorPlayerTeamCount = 1.0,		-- Reduce player team in balanced_teams or fixed_number mode 
 	BotTeam = 0,						-- Default bot team (0 = neutral / auto, 1 = US, 2 = RU) TeamId.Team2 
@@ -129,10 +129,19 @@ Config = {
 	TextRange = 15,						-- Set how far away waypoint text is visible (meters) 
 	DrawSpawnPoints = false,			-- Draw the Points where players can spawn 
 	SpawnPointRange = 150,				-- Set how far away spawn points are visible (meters) 
-	TraceDelta = 0.35,					-- Update interval of trace 
-	NodesPerCycle = 2048,				-- Set how many nodes get drawn per cycle. Affects performance 
+	TraceDelta = 0.35,					-- Update interval of trace
+	NodesPerCycle = 2048,				-- Set how many nodes get drawn per cycle. Affects performance
 
-	-- ADVANCED 
+	-- NAVMESH BAKER
+	DebugBakeNavmesh = false,			-- Arm the offline navmesh baker and show its overlay (start the sweep with the `BakeNavmesh start` console command)
+	NavmeshCellSize = 1.0,				-- Horizontal size of a navmesh cell in meters
+	NavmeshMaxSlope = 45,				-- Maximum walkable slope in degrees
+	NavmeshCellsPerTick = 16,			-- Cells probed per bake step. Higher = faster bake but worse performance
+	NavmeshStepInterval = 0.05,			-- Seconds between bake steps. Lower = faster bake but worse performance
+	NavmeshBoundRadius = 40,			-- Max distance in meters a cell may be from a waypoint (bounds the bake to the play area, 0 = no bound)
+	DrawNavmesh = true,					-- Draw the baked navmesh cells near the player
+
+	-- ADVANCED
 	DistanceForDirectAttack = 6,		-- Distance bots can hear you at 
 	MeleeAttackCoolDown = 3.5,			-- The time a bot waits before attacking with melee again 
 	AimForHead = false,					-- Bots without sniper aim for the head. A more experimental config 
@@ -152,7 +161,7 @@ Config = {
 	DefendObjectives = true,			-- Bots will stay on captured objectives and defend them 
 
 	-- EXPERT 
-	BotFirstShotDelay = 0.15,			-- Delay for first shot. If too small, there will be great spread in first cycle because it is not compensated yet 
+	BotFirstShotDelay = 0.8,			-- Delay for first shot. If too small, there will be great spread in first cycle because it is not compensated yet 
 	BotMinTimeShootAtPlayer = 0.7,		-- The minimum time a bot shoots at one player 
 	BotVehicleMinTimeShootAtPlayer = 4.0,	-- The minimum time a bot shoots at one player if in vehicle - recommended minimum 2.5, below this you will have issues 
 	BotFireModeDuration = 4.5,			-- The minimum time a bot tries to shoot a player - recommended minimum 3.0, below this you will have issues 
@@ -174,6 +183,6 @@ Config = {
 	AllowCommForAll = true,				-- If true, all Players can access the Comm-Screen 
 	DisableChatCommands = false,		-- If true, no chat commands can be used 
 	DisableRCONCommands = false,		-- If true, no RCON commands can be used 
-	IgnorePermissions = false,			-- If true, all permissions are ignored --> everyone can do everything 
+	IgnorePermissions = true,			-- If true, all permissions are ignored --> everyone can do everything 
 	Language = nil,						-- de_DE as sample (default is English, when language file does not exist) 
 } 

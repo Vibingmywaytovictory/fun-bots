@@ -1,6 +1,10 @@
-# VU related files 
+# VU related files
 .vu
 mod.db
+mod.db.backup-*
+
+# Generated navmesh exports (offline navmesh baker)
+navmeshfiles/
 
 # IDE files
 .vscode

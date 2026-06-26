@@ -84,6 +84,47 @@ Registry = {
 		-- Max Raycaststs Bot-Bot-Revive
 		BOT_BOT_REVIVE_MAX_RAYCASTS = 15
 	},
+	-- Variables related to the offline navmesh baker (see ClientNavmeshBaker / Navmesh).
+	NAVMESH = {
+		-- Horizontal size of a navmesh cell in meters. Smaller = more detail, but more raycasts.
+		CELL_SIZE = 4.0,
+		-- Vertical resolution used to separate stacked surfaces (bridges / multiple floors) in meters.
+		VERTICAL_RESOLUTION = 2.0,
+		-- How many cells to probe per bake-step. Each cell costs ~2 raycasts. Keep modest to avoid hitches.
+		CELLS_PER_TICK = 16,
+		-- Minimum time between bake-steps (seconds). Decouples raycast load from frame rate
+		-- so the bake stays smooth; lower = faster bake but heavier on performance.
+		STEP_INTERVAL = 0.05,
+		-- How far above the expected floor the downward probe starts (meters).
+		PROBE_UP = 3.0,
+		-- How far below the expected floor the downward probe reaches (meters).
+		PROBE_DOWN = 4.0,
+		-- Required standing clearance above a floor for a cell to be walkable (meters).
+		CLEARANCE = 1.8,
+		-- Maximum height difference between neighbouring cells that is still considered connected (meters).
+		MAX_STEP = 0.8,
+		-- Minimum world-up component of the surface normal for a cell to count as walkable (cos of max slope).
+		-- 0.7 ~= 45 degrees.
+		MIN_NORMAL_UP = 0.7,
+		-- Safety cap on the total number of cells a single bake may produce.
+		MAX_CELLS = 4000000,
+		-- Maximum horizontal distance (meters) a cell may be from the nearest seed waypoint.
+		-- Bounds the flood-fill to the playable area so it cannot run away across the map.
+		-- 0 disables the bound.
+		BOUND_RADIUS = 40,
+		-- Number of cells sent to the server per persistence batch.
+		STORE_BATCH_SIZE = 500,
+		-- How many batches are streamed to the server per save-step while saving. Keeps the
+		-- save from flooding the network buffer (which would disconnect the client).
+		SAVE_BATCHES_PER_TICK = 1,
+		-- Minimum time between save-steps (seconds). Throttles the save in time as well as
+		-- per-frame, so even a very large mesh streams gently. Raise it if a save ever kicks.
+		SAVE_STEP_INTERVAL = 0.05,
+		-- Only draw the navmesh overlay for cells within this range of the player (meters).
+		DRAW_RANGE = 20,
+		-- Hard cap on how many overlay spheres are drawn per frame (protects the render thread).
+		DRAW_MAX_SPHERES = 600,
+	},
 	GAME_DIRECTOR = {
 		UPDATE_OBJECTIVES_CYCLE = 1.5,
 		-- Time after a MCO is considered destroyed.

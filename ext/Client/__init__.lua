@@ -34,6 +34,8 @@ local m_Logger = Logger("FunBotClient", Debug.Client.INFO)
 local m_ClientBotManager = require('ClientBotManager')
 ---@type ClientNodeEditor
 local m_ClientNodeEditor = require('ClientNodeEditor')
+---@type ClientNavmeshBaker
+local m_ClientNavmeshBaker = require('ClientNavmeshBaker')
 ---@type ClientSpawnPointHelper
 local m_ClientSpawnPointHelper = require('ClientSpawnPointHelper')
 ---@type ConsoleCommands
@@ -117,6 +119,7 @@ end
 function FunBotClient:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 	m_ClientBotManager:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 	m_ClientNodeEditor:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
+	m_ClientNavmeshBaker:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 end
 
 ---VEXT Shared Extension:Unloading Event
@@ -129,6 +132,7 @@ end
 function FunBotClient:OnLevelDestroy()
 	m_ClientBotManager:OnLevelDestroy()
 	m_ClientNodeEditor:OnLevelDestroy()
+	m_ClientNavmeshBaker:OnLevelDestroy()
 	m_ClientSpawnPointHelper:OnLevelDestroy()
 	m_FunBotUIClient:OnLevelDestroy()
 	self._ReadyToUpdate = false
@@ -167,6 +171,7 @@ function FunBotClient:OnUIDrawHud()
 		return
 	end
 	m_ClientNodeEditor:OnUIDrawHud()
+	m_ClientNavmeshBaker:OnUIDrawHud()
 	-- m_ClientSpawnPointHelper:OnUIDrawHud()
 
 	if Registry.COMMON.USE_EXPERIMENTAL_NAMETAGS then
@@ -284,6 +289,7 @@ end
 
 function FunBotClient:OnRegisterNodeEditorEvents()
 	m_ClientNodeEditor:OnRegisterEvents()
+	m_ClientNavmeshBaker:OnRegisterEvents()
 end
 
 function FunBotClient:OnPrintResponse(p_Response)

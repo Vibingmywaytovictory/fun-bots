@@ -140,6 +140,12 @@ def set_traces_files(cursor: sqlite3.Cursor) -> None:
         if item[1] in ignore_list:
             continue
 
+        # Navmesh tables (<map>_navmesh / <map>_navmesh_meta) are not traces and have a
+        # different schema (no pathIndex/pointIndex), so they must not be exported here.
+        # They are handled by set_navmesh_files instead.
+        if "_navmesh" in item[1]:
+            continue
+
         logger.info("Export " + item[1])
         structure = cursor.execute("PRAGMA table_info('" + item[1] + "')").fetchall()
 
@@ -167,6 +173,152 @@ def set_traces_files(cursor: sqlite3.Cursor) -> None:
                     except json.JSONDecodeError:
                         print("Error decoding JSON in dataString:", dataString)
                 out_file.write(";".join(outList) + "\n")
+
+
+def set_navmesh_files(cursor: sqlite3.Cursor) -> None:
+    """Write navmesh files out of the database, one per baked map.
+
+    The runtime navmesh baker stores cells in <map>_navmesh tables (plus a small
+    <map>_navmesh_meta table holding the cell size). This exports each one to a
+    semicolon-separated text file in the navmeshfiles folder, mirroring how traces
+    are exported to .map files. A separate folder/extension is used because the
+    navmesh has a different schema than traces and must not be picked up by the
+    trace importer.
+
+    File layout:
+        cellSize;<value>          (metadata line)
+        gx;gz;gy;x;y;z            (column header)
+        <rows...>
+
+    Args:
+        - cursor - The object that'll interact with the database (with the table
+          list query already executed, as get_tables() leaves it)
+
+    Returns:
+        None
+    """
+    content = cursor.fetchall()
+    dest_folder = "navmeshfiles"
+    os.makedirs(dest_folder, exist_ok=True)
+
+    for item in content:
+        table_name = item[1]
+        # Only the cell tables, not the *_navmesh_meta companions.
+        if not table_name.endswith("_navmesh"):
+            continue
+
+        map_name = table_name[: -len("_navmesh")]
+        logger.info("Export navmesh " + map_name)
+
+        # Recover the cell size from the companion meta table (default 1.0).
+        cell_size = 1.0
+        try:
+            meta_row = cursor.execute(
+                "SELECT cellSize FROM " + table_name + "_meta LIMIT 1"
+            ).fetchone()
+            if meta_row and meta_row[0]:
+                cell_size = meta_row[0]
+        except sqlite3.OperationalError:
+            logger.warning("No meta table for " + table_name + ", assuming cell size 1.0")
+
+        file_name = map_name + ".navmesh"
+        with open(dest_folder + "/" + file_name, "w", encoding="utf-8") as out_file:
+            out_file.write("cellSize;" + format(cell_size, ".6f") + "\n")
+            out_file.write("gx;gz;gy;x;y;z\n")
+
+            rows = cursor.execute(
+                "SELECT gx, gz, gy, x, y, z FROM " + table_name + " ORDER BY gx, gz, gy ASC"
+            ).fetchall()
+            for row in rows:
+                out_list = [
+                    format(value, ".6f") if isinstance(value, float) else str(value)
+                    for value in row
+                ]
+                out_file.write(";".join(out_list) + "\n")
+
+
+def set_navmesh_db(cursor: sqlite3.Cursor) -> None:
+    """Write navmesh tables to the database, out of the navmeshfiles folder.
+
+    The inverse of set_navmesh_files. Only the navmesh tables are touched, so this
+    is safe to run against a live mod.db without disturbing traces or settings.
+
+    Args:
+        - cursor - The object that'll interact with the database
+
+    Returns:
+        None
+    """
+    source_folder = "navmeshfiles"
+
+    if not os.path.exists(source_folder):
+        logger.warning("No navmeshfiles folder found, nothing to import.")
+        return
+
+    file_names = os.listdir(source_folder)
+
+    for file_name in file_names:
+        if not file_name.endswith(".navmesh"):
+            continue
+
+        map_name = file_name[: -len(".navmesh")]
+        table_name = map_name + "_navmesh"
+        meta_table = table_name + "_meta"
+        logger.info("Import navmesh " + map_name)
+
+        cursor.execute("DROP TABLE IF EXISTS " + table_name)
+        cursor.execute(
+            "CREATE TABLE "
+            + table_name
+            + " ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "gx INTEGER, gz INTEGER, gy INTEGER, "
+            "x FLOAT, y FLOAT, z FLOAT)"
+        )
+
+        with open(source_folder + "/" + file_name, "r", encoding="utf-8") as in_file:
+            lines = in_file.readlines()
+
+        cell_size = 1.0
+        all_cells = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(";")
+            if parts[0] == "cellSize":
+                cell_size = float(parts[1])
+                continue
+            if parts[0] == "gx":  # column header
+                continue
+            if len(parts) >= 6:
+                all_cells.append(
+                    (
+                        int(parts[0]),
+                        int(parts[1]),
+                        int(parts[2]),
+                        float(parts[3]),
+                        float(parts[4]),
+                        float(parts[5]),
+                    )
+                )
+
+        cursor.executemany(
+            "INSERT INTO "
+            + table_name
+            + " (gx, gz, gy, x, y, z) VALUES(?,?,?,?,?,?)",
+            all_cells,
+        )
+
+        # Rebuild the meta table so the runtime knows the cell size.
+        cursor.execute("DROP TABLE IF EXISTS " + meta_table)
+        cursor.execute(
+            "CREATE TABLE " + meta_table + " (cellSize FLOAT, cellCount INTEGER)"
+        )
+        cursor.execute(
+            "INSERT INTO " + meta_table + " (cellSize, cellCount) VALUES(?,?)",
+            (cell_size, len(all_cells)),
+        )
 
 
 def set_traces_db(cursor: sqlite3.Cursor) -> None:
