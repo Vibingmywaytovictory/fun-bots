@@ -88,6 +88,14 @@ function ClientNavmeshBaker:ResetBake()
 
 	-- Whether this bake's result has already been auto-saved on completion.
 	self.m_AutoSaved = false
+
+	-- Overlay draw buffers (double-buffered, node-editor style): the heavy windowed
+	-- build happens in the pre-sim pass and only swaps these into place, so OnUIDrawHud
+	-- just iterates and renders them with zero computation.
+	self.m_DrawNodes = {}
+	self.m_DrawLines = {}
+	self.m_DrawRebuildTimer = 0.0
+	self.m_LastDrawCellKey = nil
 end
 
 -- =============================================
@@ -489,6 +497,9 @@ function ClientNavmeshBaker:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 		return
 	end
 
+	-- Keep the overlay buffers fresh (throttled internally; never runs in the draw call).
+	self:_UpdateDrawBuffers(p_DeltaTime)
+
 	-- Request the trace waypoints once, to use them as seeds.
 	if not self.m_RequestDataSent then
 		NetEvents:SendLocal('NodeEditor:RequestData')
@@ -728,6 +739,7 @@ end
 -- =============================================
 
 ---VEXT Client UI:DrawHud Event
+-- Renders the pre-built overlay buffers only - no computation happens here.
 function ClientNavmeshBaker:OnUIDrawHud()
 	if not self.m_Armed and not self.m_Saving then
 		return
@@ -737,6 +749,41 @@ function ClientNavmeshBaker:OnUIDrawHud()
 	-- on-screen without opening the console.
 	self:_DrawStatusText()
 
+	if not Config.DrawNavmesh then
+		return
+	end
+
+	-- Grid lines first, then the cell points on top.
+	for l_Index = 1, #self.m_DrawLines do
+		local l_Line = self.m_DrawLines[l_Index]
+		DebugRenderer:DrawLine(l_Line.from, l_Line.to, l_Line.color, l_Line.color)
+	end
+
+	local s_NodeSize = self:_CellSize() * 0.18
+	for l_Index = 1, #self.m_DrawNodes do
+		local l_Node = self.m_DrawNodes[l_Index]
+		-- Last arg = smallSizeSegmentDecrease: far nodes draw cheaper (quality scaling).
+		DebugRenderer:DrawSphere(l_Node.pos, s_NodeSize, l_Node.color, false, l_Node.low)
+	end
+end
+
+-- Find the walkable cell at (gx,gz) closest in height to p_Gy, checking the level and the
+-- two vertical neighbours so grid lines connect across small slope steps.
+---@return table|nil
+function ClientNavmeshBaker:_FindNeighbour(p_Gx, p_Gz, p_Gy)
+	local s_Cell = self.m_Cells[self:_CellKey(p_Gx, p_Gz, p_Gy)]
+	if s_Cell then return s_Cell end
+	s_Cell = self.m_Cells[self:_CellKey(p_Gx, p_Gz, p_Gy + 1)]
+	if s_Cell then return s_Cell end
+	return self.m_Cells[self:_CellKey(p_Gx, p_Gz, p_Gy - 1)]
+end
+
+-- Rebuild the overlay buffers from the cells in a window around the player. Throttled,
+-- and only when the player crosses into a new cell, so this never runs every frame and
+-- never in the draw callback. Produces points + grid lines (the "mesh" look) and tints
+-- by height, then atomically swaps the result into the live buffers.
+---@param p_DeltaTime number
+function ClientNavmeshBaker:_UpdateDrawBuffers(p_DeltaTime)
 	if not Config.DrawNavmesh or self.m_WalkableCount == 0 then
 		return
 	end
@@ -748,34 +795,87 @@ function ClientNavmeshBaker:OnUIDrawHud()
 
 	local s_PlayerPos = s_Player.soldier.worldTransform.trans
 	local s_CellSize = self:_CellSize()
-	local s_HalfSize = s_CellSize * 0.5
-	local s_Color = Vec4(0.0, 1.0, 0.4, 0.35)
-
-	-- Only look at the grid window around the player via direct key lookups, instead
-	-- of scanning every baked cell. This keeps the render cost bounded and constant,
-	-- independent of how large the bake is.
-	-- Cap the window in cells too, so a small cell size can't blow up the lookup count.
-	local s_Radius = math.min(math.ceil(Registry.NAVMESH.DRAW_RANGE / s_CellSize), 30)
 	local s_Pgx = math.floor(s_PlayerPos.x / s_CellSize)
 	local s_Pgz = math.floor(s_PlayerPos.z / s_CellSize)
 	local s_Pgy = math.floor(s_PlayerPos.y / Registry.NAVMESH.VERTICAL_RESOLUTION)
-	local s_Budget = Registry.NAVMESH.DRAW_MAX_SPHERES
-	local s_Drawn = 0
+	local s_Key = self:_CellKey(s_Pgx, s_Pgz, s_Pgy)
+
+	-- Rebuild on cell change, or on a slow timer so a growing bake's new cells still show.
+	self.m_DrawRebuildTimer = self.m_DrawRebuildTimer + p_DeltaTime
+	if s_Key == self.m_LastDrawCellKey and self.m_DrawRebuildTimer < Registry.NAVMESH.DRAW_REBUILD_INTERVAL then
+		return
+	end
+	self.m_LastDrawCellKey = s_Key
+	self.m_DrawRebuildTimer = 0.0
+
+	local s_Nodes = {}
+	local s_Lines = {}
+
+	-- Cap the window in cells too, so a small cell size cannot blow up the lookup count.
+	local s_Radius = math.min(math.ceil(Registry.NAVMESH.DRAW_RANGE / s_CellSize), 40)
+	local s_RangeSq = Registry.NAVMESH.DRAW_RANGE * Registry.NAVMESH.DRAW_RANGE
+	local s_FarSq = s_RangeSq * 0.25
+	local s_MaxCells = Registry.NAVMESH.DRAW_MAX_SPHERES
+	local s_LineColor = Vec4(0.0, 0.7, 0.32, 0.5)
+	local s_Count = 0
 
 	for l_Dx = -s_Radius, s_Radius do
 		for l_Dz = -s_Radius, s_Radius do
-			-- Check the player's vertical level plus one above/below for stacked surfaces.
+			-- Player's vertical level plus one above/below for stacked surfaces.
 			for l_Dy = -1, 1 do
 				local s_Cell = self.m_Cells[self:_CellKey(s_Pgx + l_Dx, s_Pgz + l_Dz, s_Pgy + l_Dy)]
 				if s_Cell ~= nil then
-					DebugRenderer:DrawSphere(Vec3(s_Cell.x, s_Cell.y, s_Cell.z), s_HalfSize, s_Color, false, false)
-					s_Drawn = s_Drawn + 1
-					if s_Drawn >= s_Budget then
-						return
+					local s_Ddx = s_Cell.x - s_PlayerPos.x
+					local s_Ddz = s_Cell.z - s_PlayerPos.z
+					local s_Dist2 = s_Ddx * s_Ddx + s_Ddz * s_Ddz
+
+					if s_Dist2 <= s_RangeSq then
+						local s_Pos = Vec3(s_Cell.x, s_Cell.y, s_Cell.z)
+						s_Nodes[#s_Nodes + 1] = {
+							pos = s_Pos,
+							color = self:_HeightColor(s_Cell.y - s_PlayerPos.y),
+							low = s_Dist2 > s_FarSq, -- cheaper spheres past half range
+						}
+
+						-- Grid lines to the +X and +Z neighbours (one direction each to
+						-- avoid drawing every edge twice).
+						local s_NX = self:_FindNeighbour(s_Cell.gx + 1, s_Cell.gz, s_Cell.gy)
+						if s_NX then
+							s_Lines[#s_Lines + 1] = { from = s_Pos, to = Vec3(s_NX.x, s_NX.y, s_NX.z), color = s_LineColor }
+						end
+						local s_NZ = self:_FindNeighbour(s_Cell.gx, s_Cell.gz + 1, s_Cell.gy)
+						if s_NZ then
+							s_Lines[#s_Lines + 1] = { from = s_Pos, to = Vec3(s_NZ.x, s_NZ.y, s_NZ.z), color = s_LineColor }
+						end
+
+						s_Count = s_Count + 1
+						if s_Count >= s_MaxCells then
+							goto done
+						end
 					end
 				end
 			end
 		end
+	end
+	::done::
+
+	-- Atomic swap.
+	self.m_DrawNodes = s_Nodes
+	self.m_DrawLines = s_Lines
+end
+
+-- Tint a cell by its height relative to the player: green at the player's level, shifting
+-- toward yellow above and blue below, so elevation reads at a glance.
+---@param p_DeltaY number
+---@return Vec4
+function ClientNavmeshBaker:_HeightColor(p_DeltaY)
+	local s_T = math.max(-1.0, math.min(1.0, p_DeltaY / 8.0))
+	if s_T >= 0 then
+		-- player level (green) -> above (yellow)
+		return Vec4(0.1 + 0.8 * s_T, 1.0, 0.45 - 0.35 * s_T, 0.55)
+	else
+		-- player level (green) -> below (blue)
+		return Vec4(0.1, 1.0 + 0.5 * s_T, 0.45 - 0.45 * s_T, 0.55)
 	end
 end
 
