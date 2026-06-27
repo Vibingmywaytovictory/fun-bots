@@ -28,6 +28,8 @@ require('__shared/Config')
 local m_Logger = Logger('ClientNavmeshBaker', Debug.Client.NODEEDITOR)
 ---@type Utilities
 local m_Utilities = require('__shared/Utilities')
+---@type ClientNodeEditor
+local m_ClientNodeEditor = require('ClientNodeEditor')
 
 -- Bake-state machine.
 local BakeState = {
@@ -60,6 +62,29 @@ function ClientNavmeshBaker:__init()
 	self.m_SaveQueue = {}
 	self.m_SaveCursor = 1
 	self.m_SaveTimer = 0.0
+
+	-- The cell size of the mesh currently in memory (snapshotted by a bake or a load), so
+	-- grid math matches the cells regardless of the live Config slider. nil = use Config.
+	self.m_ActiveCellSize = nil
+
+	-- Editor state.
+	self.m_EditorActive = false                 -- mirrors Config.NavmeshEditor
+	self.m_EditMode = false                      -- ALT toggles brush interaction
+	self.m_Tool = 'paint'                        -- 'paint' | 'erase' | 'box'
+	self.m_BrushRadius = Registry.NAVMESH.BRUSH_DEFAULT
+	self.m_BrushHit = nil                        -- cached raycast hit position for the cursor
+	self.m_BoxCornerA = nil                      -- first corner (box tool)
+	self.m_FireLevel = 0.0                       -- LMB level captured in the input hook
+	self.m_FireWasDown = false
+	self.m_BrushTimer = 0.0
+	self.m_CurrentStroke = nil                   -- in-progress edit, pushed to undo on release
+	self.m_UndoStack = {}
+	self.m_UnsavedEdits = 0
+	-- True while the WebUI (F12 menu, settings, commo-rose) has the cursor. The editor
+	-- suspends itself then so it never fights the menu for input.
+	self.m_UiCapturing = false
+	-- Client-load state (editor pulls the saved mesh from the server).
+	self.m_Loading = false
 
 	self:ResetBake()
 end
@@ -115,6 +140,11 @@ function ClientNavmeshBaker:OnRegisterEvents()
 	-- Re-use the node editor's data feed to seed the bake from existing waypoints.
 	-- VEXT allows multiple subscribers to the same NetEvent, so this is additive.
 	NetEvents:Subscribe('ClientNodeEditor:RevieveNodes', self, self.OnReceiveNodes)
+
+	-- Editor: navmesh streamed back from the server.
+	NetEvents:Subscribe('Navmesh:LoadBegin', self, self.OnLoadBegin)
+	NetEvents:Subscribe('Navmesh:LoadBatch', self, self.OnLoadBatch)
+	NetEvents:Subscribe('Navmesh:LoadCommit', self, self.OnLoadCommit)
 
 	self.m_EventsReady = true
 end
@@ -206,6 +236,7 @@ function ClientNavmeshBaker:StartBake()
 	end
 
 	-- Snapshot the bound radius for this whole bake and build the spatial index.
+	self.m_ActiveCellSize = Config.NavmeshCellSize
 	self.m_BoundRadius = self:_ConfigBoundRadius()
 	self:_BuildBoundIndex(s_Seeds)
 
@@ -338,12 +369,26 @@ end
 -- =============================================
 
 function ClientNavmeshBaker:_CellSize()
+	-- A bake or a loaded mesh snapshots the cell size it uses, so all grid math stays
+	-- consistent with the cells in memory even if the Config slider is changed afterwards.
+	if self.m_ActiveCellSize ~= nil and self.m_ActiveCellSize > 0 then
+		return self.m_ActiveCellSize
+	end
 	-- Config is authoritative (set from the F12 UI); fall back to the registry default.
 	local s_Size = Config.NavmeshCellSize
 	if s_Size == nil or s_Size <= 0 then
 		s_Size = Registry.NAVMESH.CELL_SIZE
 	end
 	return s_Size
+end
+
+-- Overlay draw range (meters). Config is authoritative (live-tunable); falls back to registry.
+function ClientNavmeshBaker:_DrawRange()
+	local s_Range = Config.NavmeshDrawRange
+	if s_Range == nil or s_Range <= 0 then
+		s_Range = Registry.NAVMESH.DRAW_RANGE
+	end
+	return s_Range
 end
 
 -- Cells probed per bake step. Config is authoritative (live-tunable from the F12 UI);
@@ -493,12 +538,14 @@ function ClientNavmeshBaker:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 		return
 	end
 
+	-- Keep the overlay buffers fresh (throttled internally; never runs in the draw call).
+	-- Runs regardless of armed state so a baked navmesh can be viewed alongside the
+	-- waypoint overlay even after the baker is turned off.
+	self:_UpdateDrawBuffers(p_DeltaTime)
+
 	if not self.m_Armed then
 		return
 	end
-
-	-- Keep the overlay buffers fresh (throttled internally; never runs in the draw call).
-	self:_UpdateDrawBuffers(p_DeltaTime)
 
 	-- Request the trace waypoints once, to use them as seeds.
 	if not self.m_RequestDataSent then
@@ -741,14 +788,22 @@ end
 ---VEXT Client UI:DrawHud Event
 -- Renders the pre-built overlay buffers only - no computation happens here.
 function ClientNavmeshBaker:OnUIDrawHud()
-	if not self.m_Armed and not self.m_Saving then
-		return
+	-- The baker status line only shows while the baker is actually active.
+	if self.m_Armed or self.m_Saving then
+		self:_DrawStatusText()
 	end
 
-	-- Always show a status line while the baker is enabled, so progress is visible
-	-- on-screen without opening the console.
-	self:_DrawStatusText()
+	-- Editor HUD + brush cursor (independent of the overlay toggle).
+	if self.m_EditorActive then
+		self:_DrawEditorHud()
+		if self.m_EditMode then
+			self:_DrawBrushCursor()
+		end
+	end
 
+	-- The overlay renders whenever it is enabled and there is something baked this
+	-- session, independent of the baker being armed - so it can sit alongside the
+	-- waypoint overlay (enable both "Draw Navmesh" and "Debug Trace Paths").
 	if not Config.DrawNavmesh then
 		return
 	end
@@ -759,7 +814,8 @@ function ClientNavmeshBaker:OnUIDrawHud()
 		DebugRenderer:DrawLine(l_Line.from, l_Line.to, l_Line.color, l_Line.color)
 	end
 
-	local s_NodeSize = self:_CellSize() * 0.18
+	-- Small fixed size like the node editor's waypoint dots (the grid lines carry the look).
+	local s_NodeSize = Registry.NAVMESH.NODE_SIZE
 	for l_Index = 1, #self.m_DrawNodes do
 		local l_Node = self.m_DrawNodes[l_Index]
 		-- Last arg = smallSizeSegmentDecrease: far nodes draw cheaper (quality scaling).
@@ -811,9 +867,10 @@ function ClientNavmeshBaker:_UpdateDrawBuffers(p_DeltaTime)
 	local s_Nodes = {}
 	local s_Lines = {}
 
+	local s_Range = self:_DrawRange()
 	-- Cap the window in cells too, so a small cell size cannot blow up the lookup count.
-	local s_Radius = math.min(math.ceil(Registry.NAVMESH.DRAW_RANGE / s_CellSize), 40)
-	local s_RangeSq = Registry.NAVMESH.DRAW_RANGE * Registry.NAVMESH.DRAW_RANGE
+	local s_Radius = math.min(math.ceil(s_Range / s_CellSize), 60)
+	local s_RangeSq = s_Range * s_Range
 	local s_FarSq = s_RangeSq * 0.25
 	local s_MaxCells = Registry.NAVMESH.DRAW_MAX_SPHERES
 	local s_LineColor = Vec4(0.0, 0.7, 0.32, 0.5)
@@ -913,6 +970,405 @@ function ClientNavmeshBaker:_DrawStatusText()
 end
 
 -- =============================================
+-- Editor
+-- =============================================
+
+-- Mirror Config.NavmeshEditor. Entering loads the saved navmesh if memory is empty.
+function ClientNavmeshBaker:_SyncEditorState()
+	local s_Should = Config.NavmeshEditor == true
+	if s_Should == self.m_EditorActive then
+		return
+	end
+	self.m_EditorActive = s_Should
+
+	if s_Should then
+		m_Logger:Write('Navmesh editor enabled. Press ALT to toggle brush editing.')
+		self.m_EditMode = false
+		self.m_BoxCornerA = nil
+		-- Pull the saved mesh from the server if we have nothing in memory yet.
+		if self.m_WalkableCount == 0 and not self.m_Loading then
+			self:RequestClientLoad()
+		end
+	else
+		self.m_EditMode = false
+		self:_EndStroke()
+		self.m_BoxCornerA = nil
+		m_Logger:Write('Navmesh editor disabled.')
+	end
+end
+
+-- Ask the server to stream the saved navmesh back to us for editing.
+function ClientNavmeshBaker:RequestClientLoad()
+	self.m_Loading = true
+	NetEvents:SendLocal('Navmesh:RequestLoad')
+	m_Logger:Write('Requesting navmesh from server...')
+end
+
+---@param p_Info table @{ cellSize, total }
+function ClientNavmeshBaker:OnLoadBegin(p_Info)
+	self:ResetBake()
+	self.m_Loading = true
+	self.m_UndoStack = {}
+	self.m_UnsavedEdits = 0
+	if p_Info and p_Info.cellSize and p_Info.cellSize > 0 then
+		self.m_ActiveCellSize = p_Info.cellSize
+	end
+end
+
+---@param p_Batch table[]
+function ClientNavmeshBaker:OnLoadBatch(p_Batch)
+	if not self.m_Loading then
+		return
+	end
+	for l_Index = 1, #p_Batch do
+		local l_Cell = p_Batch[l_Index]
+		local s_Key = self:_CellKey(l_Cell.gx, l_Cell.gz, l_Cell.gy)
+		if self.m_Cells[s_Key] == nil then
+			self.m_Cells[s_Key] = { x = l_Cell.x, y = l_Cell.y, z = l_Cell.z, gx = l_Cell.gx, gz = l_Cell.gz, gy = l_Cell.gy }
+			self.m_WalkableCount = self.m_WalkableCount + 1
+		end
+	end
+end
+
+function ClientNavmeshBaker:OnLoadCommit()
+	self.m_Loading = false
+	self.m_LastDrawCellKey = nil -- force overlay rebuild
+	m_Logger:Write('Navmesh loaded for editing: ' .. tostring(self.m_WalkableCount) .. ' cells.')
+end
+
+-- Camera-forward raycast (same approach as the node editor) for the brush cursor.
+---@param p_MaxDistance number
+---@return RayCastHit|nil
+function ClientNavmeshBaker:_CameraRaycast(p_MaxDistance)
+	local s_Transform = ClientUtils:GetCameraTransform()
+	if s_Transform == nil or s_Transform.trans == Vec3.zero then
+		return nil
+	end
+	local s_Dir = Vec3(-s_Transform.forward.x, -s_Transform.forward.y, -s_Transform.forward.z)
+	local s_Start = s_Transform.trans
+	local s_End = Vec3(s_Start.x + s_Dir.x * p_MaxDistance, s_Start.y + s_Dir.y * p_MaxDistance, s_Start.z + s_Dir.z * p_MaxDistance)
+	---@type RayCastFlags
+	local s_Flags = RayCastFlags.DontCheckWater | RayCastFlags.DontCheckCharacter | RayCastFlags.DontCheckRagdoll | RayCastFlags.CheckDetailMesh
+	return RaycastManager:Raycast(s_Start, s_End, s_Flags)
+end
+
+---VEXT Client Client:UpdateInput Event
+---@param p_DeltaTime number
+function ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
+	self:_SyncEditorState()
+	if not self.m_EditorActive then
+		return
+	end
+
+	-- While the WebUI holds the cursor (F12 menu open), do not touch input - so the
+	-- menu stays fully usable and LMB clicks go to it, not the brush.
+	if self.m_UiCapturing then
+		return
+	end
+
+	-- ALT toggles brush-edit interaction.
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_LeftAlt) then
+		self.m_EditMode = not self.m_EditMode
+		self:_EndStroke()
+		self.m_BoxCornerA = nil
+	end
+
+	-- Tool / brush / overlay toggles.
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_1) then self.m_Tool = 'paint' end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_2) then self.m_Tool = 'erase' end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_3) then
+		self.m_Tool = 'box'
+		self.m_BoxCornerA = nil
+	end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Subtract) then self:_AdjustBrush(-Registry.NAVMESH.BRUSH_STEP) end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Add) then self:_AdjustBrush(Registry.NAVMESH.BRUSH_STEP) end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_N) then Config.DrawNavmesh = not Config.DrawNavmesh end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_B) then self:_ToggleWaypoints() end
+	if InputManager:IsKeyDown(InputDeviceKeys.IDK_LeftControl) and InputManager:WentKeyDown(InputDeviceKeys.IDK_Z) then
+		self:_Undo()
+	end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F8) then self:SaveBake() end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F9) then self:RequestClientLoad() end
+
+	-- Cache the brush cursor position (used for drawing and applying).
+	self.m_BrushHit = nil
+	if self.m_EditMode then
+		local s_Hit = self:_CameraRaycast(120.0)
+		if s_Hit ~= nil and s_Hit.position ~= nil then
+			self.m_BrushHit = s_Hit.position
+		end
+	end
+
+	-- LMB (captured by the input hook into m_FireLevel) drives the brush.
+	if self.m_EditMode then
+		local s_FireDown = self.m_FireLevel > 0
+		local s_WentDown = s_FireDown and not self.m_FireWasDown
+		local s_WentUp = (not s_FireDown) and self.m_FireWasDown
+		self.m_FireWasDown = s_FireDown
+
+		if self.m_Tool == 'box' then
+			if s_WentDown then self:_BoxClick() end
+		else
+			if s_WentDown then self:_BeginStroke() end
+			if s_FireDown and self.m_BrushHit ~= nil and self.m_CurrentStroke ~= nil then
+				self.m_BrushTimer = self.m_BrushTimer + p_DeltaTime
+				if self.m_BrushTimer >= 0.04 then
+					self.m_BrushTimer = 0.0
+					self:_ApplyBrush()
+				end
+			end
+			if s_WentUp then self:_EndStroke() end
+		end
+	else
+		self.m_FireWasDown = false
+	end
+end
+
+---VEXT Client Input:PreUpdate Hook
+function ClientNavmeshBaker:OnInputPreUpdate(p_HookCtx, p_Cache, p_DeltaTime)
+	-- Capture LMB before any suppression so the editor can still read it.
+	self.m_FireLevel = p_Cache:GetLevel(InputConceptIdentifiers.ConceptFire)
+	-- While brush editing (and not in a menu), stop the weapon from actually firing.
+	if self.m_EditorActive and self.m_EditMode and not self.m_UiCapturing then
+		p_Cache:SetLevel(InputConceptIdentifiers.ConceptFire, 0.0)
+	end
+end
+
+-- Called by the WebUI layer (UIViews) when it grabs or releases the cursor, so the
+-- editor knows to step out of the way of the menu.
+---@param p_Value boolean
+function ClientNavmeshBaker:SetUiCapturing(p_Value)
+	self.m_UiCapturing = p_Value
+	if p_Value then
+		self.m_EditMode = false
+		self:_EndStroke()
+		self.m_BoxCornerA = nil
+	end
+end
+
+function ClientNavmeshBaker:_AdjustBrush(p_Delta)
+	self.m_BrushRadius = math.max(Registry.NAVMESH.BRUSH_MIN,
+		math.min(Registry.NAVMESH.BRUSH_MAX, self.m_BrushRadius + p_Delta))
+end
+
+function ClientNavmeshBaker:_ToggleWaypoints()
+	Config.DebugTracePaths = not Config.DebugTracePaths
+	if m_ClientNodeEditor ~= nil and m_ClientNodeEditor.OnSetEnabled ~= nil then
+		m_ClientNodeEditor:OnSetEnabled(Config.DebugTracePaths)
+	end
+end
+
+function ClientNavmeshBaker:_BeginStroke()
+	self.m_CurrentStroke = { added = {}, removed = {} }
+	self.m_BrushTimer = 1.0 -- apply on the first frame
+end
+
+function ClientNavmeshBaker:_EndStroke()
+	if self.m_CurrentStroke == nil then
+		return
+	end
+	local s_Stroke = self.m_CurrentStroke
+	self.m_CurrentStroke = nil
+
+	local s_Count = #s_Stroke.added
+	for _ in pairs(s_Stroke.removed) do s_Count = s_Count + 1 end
+	if s_Count == 0 then
+		return
+	end
+
+	self.m_UndoStack[#self.m_UndoStack + 1] = s_Stroke
+	while #self.m_UndoStack > Registry.NAVMESH.UNDO_LIMIT do
+		table.remove(self.m_UndoStack, 1)
+	end
+	self.m_UnsavedEdits = self.m_UnsavedEdits + s_Count
+end
+
+function ClientNavmeshBaker:_ApplyBrush()
+	if self.m_BrushHit == nil or self.m_CurrentStroke == nil then
+		return
+	end
+	if self.m_Tool == 'paint' then
+		self:_PaintAt(self.m_BrushHit, self.m_CurrentStroke)
+	elseif self.m_Tool == 'erase' then
+		self:_EraseAt(self.m_BrushHit, self.m_CurrentStroke)
+	end
+	self.m_LastDrawCellKey = nil -- refresh the overlay
+end
+
+-- Add walkable cells under the brush, probing each for a floor (reuses the bake probe).
+function ClientNavmeshBaker:_PaintAt(p_Hit, p_Stroke)
+	local s_CellSize = self:_CellSize()
+	local s_R = self.m_BrushRadius
+	local s_R2 = s_R * s_R
+	local s_RCells = math.ceil(s_R / s_CellSize)
+	local s_Cgx, s_Cgz = self:_WorldToGrid(p_Hit.x, p_Hit.z)
+
+	for l_Dx = -s_RCells, s_RCells do
+		for l_Dz = -s_RCells, s_RCells do
+			local s_Gx, s_Gz = s_Cgx + l_Dx, s_Cgz + l_Dz
+			local s_Wx, s_Wz = self:_GridToWorldCenter(s_Gx, s_Gz)
+			local s_Ddx, s_Ddz = s_Wx - p_Hit.x, s_Wz - p_Hit.z
+			if (s_Ddx * s_Ddx + s_Ddz * s_Ddz) <= s_R2 then
+				local s_FloorY = self:_ProbeCell(s_Gx, s_Gz, p_Hit.y)
+				if s_FloorY ~= nil and math.abs(s_FloorY - p_Hit.y) <= 2.5 then
+					local s_Gy = self:_VerticalIndex(s_FloorY)
+					local s_Key = self:_CellKey(s_Gx, s_Gz, s_Gy)
+					if self.m_Cells[s_Key] == nil then
+						self.m_Cells[s_Key] = { x = s_Wx, y = s_FloorY, z = s_Wz, gx = s_Gx, gz = s_Gz, gy = s_Gy }
+						self.m_WalkableCount = self.m_WalkableCount + 1
+						p_Stroke.added[#p_Stroke.added + 1] = s_Key
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Remove cells under the brush near the aimed height.
+function ClientNavmeshBaker:_EraseAt(p_Hit, p_Stroke)
+	local s_CellSize = self:_CellSize()
+	local s_R = self.m_BrushRadius
+	local s_R2 = s_R * s_R
+	local s_RCells = math.ceil(s_R / s_CellSize)
+	local s_Cgx, s_Cgz = self:_WorldToGrid(p_Hit.x, p_Hit.z)
+	local s_Hgy = self:_VerticalIndex(p_Hit.y)
+
+	for l_Dx = -s_RCells, s_RCells do
+		for l_Dz = -s_RCells, s_RCells do
+			local s_Gx, s_Gz = s_Cgx + l_Dx, s_Cgz + l_Dz
+			local s_Wx, s_Wz = self:_GridToWorldCenter(s_Gx, s_Gz)
+			local s_Ddx, s_Ddz = s_Wx - p_Hit.x, s_Wz - p_Hit.z
+			if (s_Ddx * s_Ddx + s_Ddz * s_Ddz) <= s_R2 then
+				for l_Dy = -1, 1 do
+					local s_Key = self:_CellKey(s_Gx, s_Gz, s_Hgy + l_Dy)
+					local s_Cell = self.m_Cells[s_Key]
+					if s_Cell ~= nil and p_Stroke.removed[s_Key] == nil then
+						self.m_Cells[s_Key] = nil
+						self.m_WalkableCount = self.m_WalkableCount - 1
+						p_Stroke.removed[s_Key] = s_Cell
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Box tool: first click sets a corner, second erases the rectangle between them.
+function ClientNavmeshBaker:_BoxClick()
+	if self.m_BrushHit == nil then
+		return
+	end
+	if self.m_BoxCornerA == nil then
+		self.m_BoxCornerA = self.m_BrushHit:Clone()
+		return
+	end
+
+	local s_Stroke = { added = {}, removed = {} }
+	local s_MinX = math.min(self.m_BoxCornerA.x, self.m_BrushHit.x)
+	local s_MaxX = math.max(self.m_BoxCornerA.x, self.m_BrushHit.x)
+	local s_MinZ = math.min(self.m_BoxCornerA.z, self.m_BrushHit.z)
+	local s_MaxZ = math.max(self.m_BoxCornerA.z, self.m_BrushHit.z)
+	for l_Key, l_Cell in pairs(self.m_Cells) do
+		if l_Cell.x >= s_MinX and l_Cell.x <= s_MaxX and l_Cell.z >= s_MinZ and l_Cell.z <= s_MaxZ then
+			s_Stroke.removed[l_Key] = l_Cell
+		end
+	end
+	for l_Key, _ in pairs(s_Stroke.removed) do
+		self.m_Cells[l_Key] = nil
+		self.m_WalkableCount = self.m_WalkableCount - 1
+	end
+
+	self.m_CurrentStroke = s_Stroke
+	self:_EndStroke()
+	self.m_BoxCornerA = nil
+	self.m_LastDrawCellKey = nil
+end
+
+function ClientNavmeshBaker:_Undo()
+	local s_Stroke = table.remove(self.m_UndoStack)
+	if s_Stroke == nil then
+		return
+	end
+	for l_I = 1, #s_Stroke.added do
+		local s_Key = s_Stroke.added[l_I]
+		if self.m_Cells[s_Key] ~= nil then
+			self.m_Cells[s_Key] = nil
+			self.m_WalkableCount = self.m_WalkableCount - 1
+		end
+	end
+	for l_Key, l_Cell in pairs(s_Stroke.removed) do
+		if self.m_Cells[l_Key] == nil then
+			self.m_Cells[l_Key] = l_Cell
+			self.m_WalkableCount = self.m_WalkableCount + 1
+		end
+	end
+	self.m_LastDrawCellKey = nil
+end
+
+-- In-world brush cursor (ring, plus the box rectangle when placing one).
+function ClientNavmeshBaker:_DrawBrushCursor()
+	local s_Hit = self.m_BrushHit
+	if s_Hit == nil then
+		return
+	end
+	local s_Color = Vec4(0.3, 0.8, 1.0, 0.9)
+	if self.m_Tool == 'erase' then s_Color = Vec4(1.0, 0.35, 0.3, 0.9) end
+	if self.m_Tool == 'box' then s_Color = Vec4(1.0, 0.8, 0.2, 0.9) end
+
+	local s_R = self.m_BrushRadius
+	local s_N = 26
+	local s_Prev = nil
+	for l_I = 0, s_N do
+		local s_A = (l_I / s_N) * math.pi * 2
+		local s_P = Vec3(s_Hit.x + s_R * math.cos(s_A), s_Hit.y + 0.06, s_Hit.z + s_R * math.sin(s_A))
+		if s_Prev ~= nil then
+			DebugRenderer:DrawLine(s_Prev, s_P, s_Color, s_Color)
+		end
+		s_Prev = s_P
+	end
+
+	if self.m_Tool == 'box' and self.m_BoxCornerA ~= nil then
+		local a, b = self.m_BoxCornerA, s_Hit
+		local s_Y = math.max(a.y, b.y) + 0.06
+		local p1, p2, p3, p4 = Vec3(a.x, s_Y, a.z), Vec3(b.x, s_Y, a.z), Vec3(b.x, s_Y, b.z), Vec3(a.x, s_Y, b.z)
+		DebugRenderer:DrawLine(p1, p2, s_Color, s_Color)
+		DebugRenderer:DrawLine(p2, p3, s_Color, s_Color)
+		DebugRenderer:DrawLine(p3, p4, s_Color, s_Color)
+		DebugRenderer:DrawLine(p4, p1, s_Color, s_Color)
+	end
+end
+
+-- 2D editor HUD (text rows, like the node editor's labels).
+function ClientNavmeshBaker:_DrawEditorHud()
+	local s_X = 30.0
+	local s_Y = 232.0
+	local s_LH = 16.0
+	local s_White = Vec4(0.92, 0.97, 0.94, 1.0)
+	local s_Muted = Vec4(0.62, 0.73, 0.69, 1.0)
+	local s_Accent = Vec4(0.36, 0.91, 0.66, 1.0)
+
+	local function l_Line(p_Text, p_Color)
+		DebugRenderer:DrawText2D(s_X, s_Y, p_Text, p_Color or s_White, 1.1)
+		s_Y = s_Y + s_LH
+	end
+
+	l_Line('NAVMESH EDITOR', s_Accent)
+	if self.m_Loading then
+		l_Line('loading from server...', s_Muted)
+	end
+	l_Line(string.format('edit: %s   tool: %s   brush: %.0f m',
+		self.m_EditMode and 'ON' or 'off', self.m_Tool, self.m_BrushRadius))
+	l_Line(string.format('cells: %d   unsaved edits: %d', self.m_WalkableCount, self.m_UnsavedEdits), s_Muted)
+	-- Diagnostics (helps confirm the brush is reading aim + LMB correctly).
+	l_Line(string.format('aim: %s   LMB: %s', self.m_BrushHit and 'hit' or 'none',
+		self.m_FireLevel > 0 and 'DOWN' or 'up'), s_Muted)
+	s_Y = s_Y + 5
+	l_Line('ALT edit  |  LMB apply  |  1/2/3 paint/erase/box', s_Muted)
+	l_Line('numpad -/+ brush  |  N navmesh  |  B waypoints', s_Muted)
+	l_Line('Ctrl+Z undo  |  F8 save  |  F9 reload from db', s_Muted)
+end
+
+-- =============================================
 -- Level lifecycle
 -- =============================================
 
@@ -920,6 +1376,13 @@ function ClientNavmeshBaker:OnLevelDestroy()
 	self:ResetBake()
 	self.m_SeedWaypoints = {}
 	self.m_RequestDataSent = false
+	self.m_ActiveCellSize = nil
+	self.m_EditMode = false
+	self.m_CurrentStroke = nil
+	self.m_BoxCornerA = nil
+	self.m_Loading = false
+	self.m_UndoStack = {}
+	self.m_UnsavedEdits = 0
 end
 
 if g_ClientNavmeshBaker == nil then

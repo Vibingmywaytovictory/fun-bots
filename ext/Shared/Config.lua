@@ -140,6 +140,8 @@ Config = {
 	NavmeshStepInterval = 0.05,			-- Seconds between bake steps. Lower = faster bake but worse performance
 	NavmeshBoundRadius = 40,			-- Max distance in meters a cell may be from a waypoint (bounds the bake to the play area, 0 = no bound)
 	DrawNavmesh = true,					-- Draw the baked navmesh cells near the player
+	NavmeshDrawRange = 40,				-- How far away navmesh cells are drawn (meters)
+	NavmeshEditor = false,				-- Enable the in-game navmesh editor (loads the saved navmesh, ALT toggles brush editing)
 
 	-- ADVANCED
 	DistanceForDirectAttack = 6,		-- Distance bots can hear you at 

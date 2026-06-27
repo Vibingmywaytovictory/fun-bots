@@ -121,12 +121,26 @@ Registry = {
 		-- per-frame, so even a very large mesh streams gently. Raise it if a save ever kicks.
 		SAVE_STEP_INTERVAL = 0.05,
 		-- Only draw the navmesh overlay for cells within this range of the player (meters).
+		-- Fallback default; the live value comes from Config.NavmeshDrawRange.
 		DRAW_RANGE = 40,
+		-- Radius of a navmesh cell point in the overlay (meters). Kept small (like the node
+		-- editor's waypoint dots) so the grid lines carry the look without visual clutter.
+		NODE_SIZE = 0.05,
 		-- Hard cap on how many cells (points + their grid lines) put into the overlay buffer.
 		DRAW_MAX_SPHERES = 2500,
 		-- Seconds between overlay rebuilds. The overlay is also rebuilt whenever the player
 		-- crosses into a new cell. Building is done in the pre-sim pass, never in the draw call.
 		DRAW_REBUILD_INTERVAL = 0.25,
+		-- Editor brush radius (meters): default and the range the [ ] keys step through.
+		BRUSH_DEFAULT = 4.0,
+		BRUSH_MIN = 1.0,
+		BRUSH_MAX = 16.0,
+		BRUSH_STEP = 1.0,
+		-- How many brush strokes can be undone.
+		UNDO_LIMIT = 25,
+		-- Server -> client navmesh streaming (editor load), throttled like the save.
+		LOAD_BATCHES_PER_TICK = 2,
+		LOAD_SEND_INTERVAL = 0.05,
 	},
 	GAME_DIRECTOR = {
 		UPDATE_OBJECTIVES_CYCLE = 1.5,

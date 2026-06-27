@@ -1280,8 +1280,31 @@ SettingsDefinition = {
 			---@type Type|integer
 			Type = Type.Boolean,
 			Value = Config.DrawNavmesh,
-			Description = "Draw the baked navmesh cells near the player while the baker is armed",
+			Description = "Draw the baked navmesh overlay. Works alongside the waypoint overlay and stays visible after a bake even if the baker is turned off",
 			Default = true,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshDrawRange",
+			Text = "Navmesh Draw Range",
+			---@type Type|integer
+			Type = Type.Integer,
+			Value = Config.NavmeshDrawRange,
+			Description = "How far away navmesh cells are drawn in meters. Takes effect immediately",
+			Reference = Range(10.00, 200.00, 5.0),
+			Default = 40,
+			UpdateFlag = UpdateFlag.None,
+			Category = "TRACE"
+		},
+		{
+			Name = "NavmeshEditor",
+			Text = "Navmesh Editor",
+			---@type Type|integer
+			Type = Type.Boolean,
+			Value = Config.NavmeshEditor,
+			Description = "Open the in-game navmesh editor. It loads the saved navmesh from the database, shows a HUD, and lets you press ALT to toggle brush editing (paint with the left mouse button)",
+			Default = false,
 			UpdateFlag = UpdateFlag.None,
 			Category = "TRACE"
 		},

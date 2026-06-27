@@ -261,6 +261,7 @@ function FunBotServer:OnEngineUpdate(p_DeltaTime, p_SimulationDeltaTime)
 	m_GameDirector:OnEngineUpdate(p_DeltaTime)
 	m_BotSpawner:OnEngineUpdate(p_DeltaTime, p_SimulationDeltaTime)
 	m_NodeEditor:OnEngineUpdate(p_DeltaTime, p_SimulationDeltaTime)
+	m_Navmesh:OnUpdate(p_DeltaTime)
 end
 
 ---VEXT Shared UpdateManager:Update Event

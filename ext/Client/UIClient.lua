@@ -318,10 +318,10 @@ function FunBotUIClient:OnClientUpdateInput(p_DeltaTime)
 		self._views:enable()
 		NetEvents:Send('PathMenu:Unhide')
 	elseif InputManager:WentKeyDown(Registry.COMMON.BOT_COMMAND_KEY) and not self.m_InWaypointEditor and
-		not self.m_InCommScreen and not self.m_WaitForKeyLeft then
+		not Config.NavmeshEditor and not self.m_InCommScreen and not self.m_WaitForKeyLeft then
 		NetEvents:Send('UI_Request_CommoRose_Show')
 	elseif InputManager:WentKeyUp(Registry.COMMON.BOT_COMMAND_KEY) and not self.m_InWaypointEditor and
-		(self.m_InCommScreen or self.m_WaitForKeyLeft) then
+		not Config.NavmeshEditor and (self.m_InCommScreen or self.m_WaitForKeyLeft) then
 		if self.m_InCommScreen then
 			self:_onUICommoRose("false") -- To-do: Remove Permission-Check?
 		end

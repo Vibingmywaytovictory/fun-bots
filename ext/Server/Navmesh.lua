@@ -43,6 +43,14 @@ function Navmesh:RegisterVars()
 	self.m_IncomingCount = 0
 	self.m_IncomingCellSize = Registry.NAVMESH.CELL_SIZE
 	self.m_SaveTable = ''
+
+	-- Streaming-load state (server -> client) used by the editor. The in-memory mesh is
+	-- flattened and sent in throttled batches so it never floods the client.
+	self.m_LoadSending = false
+	self.m_LoadPlayerId = nil
+	self.m_LoadQueue = {}
+	self.m_LoadCursor = 1
+	self.m_LoadTimer = 0.0
 end
 
 -- =============================================
@@ -53,6 +61,85 @@ function Navmesh:RegisterCustomEvents()
 	NetEvents:Subscribe('Navmesh:StoreBegin', self, self.OnStoreBegin)
 	NetEvents:Subscribe('Navmesh:StoreBatch', self, self.OnStoreBatch)
 	NetEvents:Subscribe('Navmesh:StoreCommit', self, self.OnStoreCommit)
+	NetEvents:Subscribe('Navmesh:RequestLoad', self, self.OnRequestLoad)
+end
+
+-- =============================================
+-- Load (server -> client) for the editor
+-- =============================================
+
+-- A client (editor) asks for the current navmesh. Flatten the in-memory mesh and stream
+-- it back in throttled batches from OnUpdate.
+---@param p_Player Player
+function Navmesh:OnRequestLoad(p_Player)
+	if not self:_IsAuthorized(p_Player) then
+		return
+	end
+
+	self.m_LoadQueue = {}
+	for l_Key, l_Cell in pairs(self.m_Cells) do
+		local s_Parts = l_Key:split(':') -- "gx:gz:gy"
+		self.m_LoadQueue[#self.m_LoadQueue + 1] = {
+			gx = tonumber(s_Parts[1]),
+			gz = tonumber(s_Parts[2]),
+			gy = tonumber(s_Parts[3]),
+			x = l_Cell.x,
+			y = l_Cell.y,
+			z = l_Cell.z,
+		}
+	end
+
+	self.m_LoadCursor = 1
+	self.m_LoadPlayerId = p_Player.onlineId
+	self.m_LoadSending = true
+	self.m_LoadTimer = 0.0
+
+	NetEvents:SendTo('Navmesh:LoadBegin', p_Player, { cellSize = self.m_CellSize, total = #self.m_LoadQueue })
+	m_Logger:Write('Navmesh editor load: streaming ' .. tostring(#self.m_LoadQueue) .. ' cells to ' .. p_Player.name)
+end
+
+-- Drive the streaming load. Called every server engine update.
+---@param p_DeltaTime number
+function Navmesh:OnUpdate(p_DeltaTime)
+	if not self.m_LoadSending then
+		return
+	end
+
+	-- Resolve the target each tick so a player leaving mid-stream aborts cleanly.
+	local s_Player = self.m_LoadPlayerId and PlayerManager:GetPlayerByOnlineId(self.m_LoadPlayerId) or nil
+	if s_Player == nil then
+		self.m_LoadSending = false
+		self.m_LoadQueue = {}
+		return
+	end
+
+	self.m_LoadTimer = self.m_LoadTimer + p_DeltaTime
+	if self.m_LoadTimer < Registry.NAVMESH.LOAD_SEND_INTERVAL then
+		return
+	end
+	self.m_LoadTimer = 0.0
+
+	local s_BatchSize = Registry.NAVMESH.STORE_BATCH_SIZE
+	for _ = 1, Registry.NAVMESH.LOAD_BATCHES_PER_TICK do
+		if self.m_LoadCursor > #self.m_LoadQueue then
+			NetEvents:SendTo('Navmesh:LoadCommit', s_Player)
+			self.m_LoadSending = false
+			self.m_LoadQueue = {}
+			m_Logger:Write('Navmesh editor load complete.')
+			return
+		end
+
+		local s_Batch = {}
+		for _ = 1, s_BatchSize do
+			local l_Cell = self.m_LoadQueue[self.m_LoadCursor]
+			if l_Cell == nil then
+				break
+			end
+			s_Batch[#s_Batch + 1] = l_Cell
+			self.m_LoadCursor = self.m_LoadCursor + 1
+		end
+		NetEvents:SendTo('Navmesh:LoadBatch', s_Player, s_Batch)
+	end
 end
 
 ---@param p_LevelName string
@@ -67,6 +154,9 @@ function Navmesh:OnLevelDestroy()
 	self.m_CellCount = 0
 	self.m_IncomingCount = 0
 	self.m_SaveInProgress = false
+	self.m_LoadSending = false
+	self.m_LoadPlayerId = nil
+	self.m_LoadQueue = {}
 end
 
 -- =============================================

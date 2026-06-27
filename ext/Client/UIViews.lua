@@ -40,21 +40,32 @@ end
 -- self:disable()
 -- end
 
+-- Tell the navmesh editor whether the WebUI currently owns the cursor, so it can
+-- suspend its keybinds/brush while a menu is open.
+local function _NotifyNavmeshEditor(p_Capturing)
+	if g_ClientNavmeshBaker ~= nil and g_ClientNavmeshBaker.SetUiCapturing ~= nil then
+		g_ClientNavmeshBaker:SetUiCapturing(p_Capturing)
+	end
+end
+
 -- Enable Mouse/Keyboard actions.
 function UIViews:enable()
 	WebUI:EnableMouse()
 	WebUI:EnableKeyboard()
+	_NotifyNavmeshEditor(true)
 end
 
 -- Enable Mouse/Keyboard actions.
 function UIViews:enableMouseOnly()
 	WebUI:EnableMouse()
+	_NotifyNavmeshEditor(true)
 end
 
 -- Disable Mouse/Keyboard actions.
 function UIViews:disable()
 	WebUI:ResetMouse()
 	WebUI:ResetKeyboard()
+	_NotifyNavmeshEditor(false)
 end
 
 function UIViews:focus()

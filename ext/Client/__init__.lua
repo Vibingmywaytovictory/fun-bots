@@ -154,6 +154,7 @@ end
 function FunBotClient:OnClientUpdateInput(p_DeltaTime)
 	m_ClientNodeEditor:OnClientUpdateInput(p_DeltaTime)
 	m_ClientBotManager:OnClientUpdateInput(p_DeltaTime)
+	m_ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
 	m_ClientSpawnPointHelper:OnClientUpdateInput(p_DeltaTime)
 	m_FunBotUIClient:OnClientUpdateInput(p_DeltaTime)
 end
@@ -306,6 +307,7 @@ end
 ---@param p_DeltaTime number
 function FunBotClient:OnInputPreUpdate(p_HookCtx, p_Cache, p_DeltaTime)
 	m_ClientBotManager:OnInputPreUpdate(p_HookCtx, p_Cache, p_DeltaTime)
+	m_ClientNavmeshBaker:OnInputPreUpdate(p_HookCtx, p_Cache, p_DeltaTime)
 end
 
 ---VEXT Client UI:PushScreen Hook
