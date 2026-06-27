@@ -543,6 +543,9 @@ function ClientNavmeshBaker:OnUpdateManagerUpdate(p_DeltaTime, p_UpdatePass)
 	-- waypoint overlay even after the baker is turned off.
 	self:_UpdateDrawBuffers(p_DeltaTime)
 
+	-- Editor brush raycast + apply (raycasts only resolve in this pre-sim pass).
+	self:_UpdateEditor(p_DeltaTime)
+
 	if not self.m_Armed then
 		return
 	end
@@ -1089,38 +1092,45 @@ function ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
 	end
 	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F8) then self:SaveBake() end
 	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F9) then self:RequestClientLoad() end
+	-- Note: the brush raycast + LMB apply are handled in _UpdateEditor (pre-sim pass).
+	-- Raycasts do not resolve from the Client:UpdateInput event.
+end
 
-	-- Cache the brush cursor position (used for drawing and applying).
-	self.m_BrushHit = nil
-	if self.m_EditMode then
-		local s_Hit = self:_CameraRaycast(120.0)
-		if s_Hit ~= nil and s_Hit.position ~= nil then
-			self.m_BrushHit = s_Hit.position
-		end
+-- Brush raycast + LMB application. Runs in the pre-sim pass (the only place client
+-- raycasts resolve - the node editor does the same).
+---@param p_DeltaTime number
+function ClientNavmeshBaker:_UpdateEditor(p_DeltaTime)
+	if not self.m_EditorActive or self.m_UiCapturing or not self.m_EditMode then
+		self.m_BrushHit = nil
+		self.m_FireWasDown = false
+		return
 	end
 
-	-- LMB (captured by the input hook into m_FireLevel) drives the brush.
-	if self.m_EditMode then
-		local s_FireDown = self.m_FireLevel > 0
-		local s_WentDown = s_FireDown and not self.m_FireWasDown
-		local s_WentUp = (not s_FireDown) and self.m_FireWasDown
-		self.m_FireWasDown = s_FireDown
+	-- Raycast for the brush cursor.
+	self.m_BrushHit = nil
+	local s_Hit = self:_CameraRaycast(120.0)
+	if s_Hit ~= nil and s_Hit.position ~= nil then
+		self.m_BrushHit = s_Hit.position
+	end
 
-		if self.m_Tool == 'box' then
-			if s_WentDown then self:_BoxClick() end
-		else
-			if s_WentDown then self:_BeginStroke() end
-			if s_FireDown and self.m_BrushHit ~= nil and self.m_CurrentStroke ~= nil then
-				self.m_BrushTimer = self.m_BrushTimer + p_DeltaTime
-				if self.m_BrushTimer >= 0.04 then
-					self.m_BrushTimer = 0.0
-					self:_ApplyBrush()
-				end
-			end
-			if s_WentUp then self:_EndStroke() end
-		end
+	-- LMB (level captured in the input hook) drives the brush.
+	local s_FireDown = self.m_FireLevel > 0
+	local s_WentDown = s_FireDown and not self.m_FireWasDown
+	local s_WentUp = (not s_FireDown) and self.m_FireWasDown
+	self.m_FireWasDown = s_FireDown
+
+	if self.m_Tool == 'box' then
+		if s_WentDown then self:_BoxClick() end
 	else
-		self.m_FireWasDown = false
+		if s_WentDown then self:_BeginStroke() end
+		if s_FireDown and self.m_BrushHit ~= nil and self.m_CurrentStroke ~= nil then
+			self.m_BrushTimer = self.m_BrushTimer + p_DeltaTime
+			if self.m_BrushTimer >= 0.04 then
+				self.m_BrushTimer = 0.0
+				self:_ApplyBrush()
+			end
+		end
+		if s_WentUp then self:_EndStroke() end
 	end
 end
 
