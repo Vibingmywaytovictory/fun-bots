@@ -1112,12 +1112,13 @@ function ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
 	if InputManager:IsKeyDown(InputDeviceKeys.IDK_LeftControl) and InputManager:WentKeyDown(InputDeviceKeys.IDK_Z) then
 		self:_Undo()
 	end
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F8) then self:SaveBake() end
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F9) then self:RequestClientLoad() end
-	-- F7 turns the editor off (the "off button"). Done locally for instant effect and
+	-- Letter keys (function keys did not register in-game).
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Y) then self:SaveBake() end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_I) then self:RequestClientLoad() end
+	-- P turns the editor off (the "off button"). Done locally for instant effect and
 	-- persisted via the settings manager so it stays off after a rejoin - and so the F12
 	-- menu is reachable again.
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F7) then
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_P) then
 		Config.NavmeshEditor = false
 		NetEvents:SendLocal('ConsoleCommands:SetConfig', 'NavmeshEditor', 'false')
 	end
@@ -1409,8 +1410,8 @@ function ClientNavmeshBaker:_DrawEditorHud()
 		#self.m_DrawNodes, self:_CellSize()), s_Muted)
 	s_Y = s_Y + 5
 	l_Line('ALT edit  |  LMB apply  |  1/2/3 paint/erase/box', s_Muted)
-	l_Line('numpad -/+ brush  |  N navmesh  |  B waypoints', s_Muted)
-	l_Line('Ctrl+Z undo  |  F8 save  |  F9 reload  |  F7 EXIT editor', s_Accent)
+	l_Line('numpad -/+ brush  |  N navmesh  |  B waypoints  |  Ctrl+Z undo', s_Muted)
+	l_Line('Y save  |  I load from db  |  P EXIT editor', s_Accent)
 end
 
 -- =============================================

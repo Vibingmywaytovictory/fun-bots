@@ -68,8 +68,9 @@ end
 -- Load (server -> client) for the editor
 -- =============================================
 
--- A client (editor) asks for the current navmesh. Flatten the in-memory mesh and stream
--- it back in throttled batches from OnUpdate.
+-- A client (editor) asks for the current navmesh. Read it fresh from the database (so a
+-- mesh baked this session - and saved to the DB but never reloaded into server memory -
+-- still streams correctly), then send it back in throttled batches from OnUpdate.
 ---@param p_Player Player
 function Navmesh:OnRequestLoad(p_Player)
 	if not self:_IsAuthorized(p_Player) then
@@ -77,16 +78,35 @@ function Navmesh:OnRequestLoad(p_Player)
 	end
 
 	self.m_LoadQueue = {}
-	for l_Key, l_Cell in pairs(self.m_Cells) do
-		local s_Parts = l_Key:split(':') -- "gx:gz:gy"
-		self.m_LoadQueue[#self.m_LoadQueue + 1] = {
-			gx = tonumber(s_Parts[1]),
-			gz = tonumber(s_Parts[2]),
-			gy = tonumber(s_Parts[3]),
-			x = l_Cell.x,
-			y = l_Cell.y,
-			z = l_Cell.z,
-		}
+
+	if self.m_MapName ~= '' and SQL:Open() then
+		local s_Table = self.m_MapName .. '_navmesh'
+		local s_Exists = SQL:Query("select name from sqlite_master where type='table' and name='" .. s_Table .. "'")
+
+		if s_Exists and #s_Exists > 0 then
+			-- Refresh the cell size from the meta table.
+			local s_Meta = SQL:Query('SELECT cellSize FROM ' .. self.m_MapName .. '_navmesh_meta LIMIT 1')
+			if s_Meta and #s_Meta > 0 and s_Meta[1]['cellSize'] then
+				self.m_CellSize = s_Meta[1]['cellSize']
+			end
+
+			local s_Rows = SQL:Query('SELECT gx, gz, gy, x, y, z FROM ' .. s_Table)
+			if s_Rows then
+				for l_Index = 1, #s_Rows do
+					local l_Row = s_Rows[l_Index]
+					self.m_LoadQueue[#self.m_LoadQueue + 1] = {
+						gx = l_Row['gx'],
+						gz = l_Row['gz'],
+						gy = l_Row['gy'],
+						x = l_Row['x'],
+						y = l_Row['y'],
+						z = l_Row['z'],
+					}
+				end
+			end
+		end
+
+		SQL:Close()
 	end
 
 	self.m_LoadCursor = 1
