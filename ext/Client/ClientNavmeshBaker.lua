@@ -1114,6 +1114,13 @@ function ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
 	end
 	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F8) then self:SaveBake() end
 	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F9) then self:RequestClientLoad() end
+	-- F7 turns the editor off (the "off button"). Done locally for instant effect and
+	-- persisted via the settings manager so it stays off after a rejoin - and so the F12
+	-- menu is reachable again.
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_F7) then
+		Config.NavmeshEditor = false
+		NetEvents:SendLocal('ConsoleCommands:SetConfig', 'NavmeshEditor', 'false')
+	end
 	-- Note: the brush raycast + LMB apply are handled in _UpdateEditor (pre-sim pass).
 	-- Raycasts do not resolve from the Client:UpdateInput event.
 end
@@ -1403,7 +1410,7 @@ function ClientNavmeshBaker:_DrawEditorHud()
 	s_Y = s_Y + 5
 	l_Line('ALT edit  |  LMB apply  |  1/2/3 paint/erase/box', s_Muted)
 	l_Line('numpad -/+ brush  |  N navmesh  |  B waypoints', s_Muted)
-	l_Line('Ctrl+Z undo  |  F8 save  |  F9 reload from db', s_Muted)
+	l_Line('Ctrl+Z undo  |  F8 save  |  F9 reload  |  F7 EXIT editor', s_Accent)
 end
 
 -- =============================================
