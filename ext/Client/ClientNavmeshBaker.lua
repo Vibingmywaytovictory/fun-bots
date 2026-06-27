@@ -1118,26 +1118,17 @@ function ClientNavmeshBaker:OnClientUpdateInput(p_DeltaTime)
 	if InputManager:IsKeyDown(InputDeviceKeys.IDK_LeftControl) and InputManager:WentKeyDown(InputDeviceKeys.IDK_Z) then
 		self:_Undo()
 	end
-	-- Save/load/exit on likely-free letters (H/U/O). If these do not register on your
-	-- setup, the live key-test below tells you which candidate keys do work.
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_H) then self:SaveBake() end
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_U) then self:RequestClientLoad() end
-	if InputManager:WentKeyDown(InputDeviceKeys.IDK_O) then
+	-- Numpad keys: not bound to BF3 actions (unlike top-row 4/5/6 which get consumed),
+	-- and confirmed working in-game (same as the numpad -/+ brush keys).
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Numpad7) then self:SaveBake() end
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Numpad8) then self:RequestClientLoad() end
+	-- Numpad 9 turns the editor off (the "off button"). Done locally for instant effect and
+	-- persisted via the settings manager so it stays off after a rejoin - and so the F12
+	-- menu is reachable again.
+	if InputManager:WentKeyDown(InputDeviceKeys.IDK_Numpad9) then
 		Config.NavmeshEditor = false
 		NetEvents:SendLocal('ConsoleCommands:SetConfig', 'NavmeshEditor', 'false')
 	end
-
-	-- DIAGNOSTIC: live held-state of candidate keys so we can find ones that register
-	-- on this machine. Hold each and watch the "key test" line in the HUD.
-	self.m_DbgKeys = {
-		H = InputManager:IsKeyDown(InputDeviceKeys.IDK_H),
-		U = InputManager:IsKeyDown(InputDeviceKeys.IDK_U),
-		O = InputManager:IsKeyDown(InputDeviceKeys.IDK_O),
-		J = InputManager:IsKeyDown(InputDeviceKeys.IDK_J),
-		K = InputManager:IsKeyDown(InputDeviceKeys.IDK_K),
-		L = InputManager:IsKeyDown(InputDeviceKeys.IDK_L),
-		M = InputManager:IsKeyDown(InputDeviceKeys.IDK_M),
-	}
 	-- Note: the brush raycast + LMB apply are handled in _UpdateEditor (pre-sim pass).
 	-- Raycasts do not resolve from the Client:UpdateInput event.
 end
@@ -1427,12 +1418,7 @@ function ClientNavmeshBaker:_DrawEditorHud()
 	s_Y = s_Y + 5
 	l_Line('ALT edit  |  LMB apply  |  1/2/3 paint/erase/box', s_Muted)
 	l_Line('numpad -/+ brush  |  N navmesh  |  B waypoints  |  Ctrl+Z undo', s_Muted)
-	l_Line('H SAVE  |  U load from db  |  O EXIT editor', s_Accent)
-	-- Live key test: hold a key, see if it shows "1". Tells us which keys register here.
-	local s_Dbg = self.m_DbgKeys or {}
-	l_Line(string.format('key test (hold): H%d U%d O%d J%d K%d L%d M%d',
-		s_Dbg.H and 1 or 0, s_Dbg.U and 1 or 0, s_Dbg.O and 1 or 0,
-		s_Dbg.J and 1 or 0, s_Dbg.K and 1 or 0, s_Dbg.L and 1 or 0, s_Dbg.M and 1 or 0), s_Muted)
+	l_Line('numpad 7 SAVE  |  numpad 8 load  |  numpad 9 EXIT editor', s_Accent)
 end
 
 -- =============================================
